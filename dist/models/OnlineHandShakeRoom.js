@@ -8,6 +8,7 @@ const OnlineHandShakeRoomSchema = new mongoose_1.Schema({
     topicId: { type: mongoose_1.Schema.Types.ObjectId, ref: "topics" },
     quizLimit: { type: Number, required: true },
     user: { type: String, required: true },
+    isGuest: { type: Boolean },
     quizType: { type: String, required: true },
     isAlive: { type: Boolean, required: true },
 });

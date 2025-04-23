@@ -33,6 +33,8 @@ const onlineRoomSchema = new Schema(
     resignation: { type: String, default: "" },
     seconds: { type: String, required: true },
     isEnded: { type: Boolean, required: true, default: false },
+    isGuest1: { type: Boolean },
+    isGuest2: { type: Boolean },
   },
   {
     timestamps: true,

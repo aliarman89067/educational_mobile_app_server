@@ -13,6 +13,7 @@ import quizRoutes from "./routes/quizRoute";
 import subjectRoute from "./routes/subjectRoute";
 import userRoute from "./routes/userRoute";
 import historyRoute from "./routes/historyRoute";
+import guestRoute from "./routes/guestRoute";
 
 import "./models/Topic";
 import "./models/Year";
@@ -28,6 +29,7 @@ import topicModel from "./models/Topic";
 import OnlineRoomModel from "./models/OnlineRoom";
 import UserModel from "./models/User";
 import OnlineHistoryModel from "./models/OnlineHistory";
+import GuestModel from "./models/Guest";
 
 dotEnv.config();
 
@@ -53,6 +55,7 @@ io.on("connection", (socket) => {
       name,
       imageUrl,
       seconds,
+      isGuest,
     } = data;
 
     if (
@@ -70,12 +73,14 @@ io.on("connection", (socket) => {
       return;
     }
     try {
+      console.log("Is Guest", isGuest);
       // Create handshake room
       const newHandShakeRoom = new OnlineHandShakeRoomModel({
         subjectId,
         sessionId,
         quizLimit,
         quizType,
+        isGuest,
         isAlive: true,
         user: userId,
         [quizType === "Yearly" ? "yearId" : "topicId"]: yearIdOrTopicId,
@@ -112,7 +117,7 @@ io.on("connection", (socket) => {
       const handleOnlineRoom = async () => {
         // Generate unique room key
         const uniqueKey = [userId, findSameStudent.user].sort().join("_");
-        console.log(uniqueKey);
+        console.log("Unique Id for both users", uniqueKey);
         // Fetch quiz data
         type ModelWithFindById = {
           findById: (id: any) => {
@@ -145,6 +150,8 @@ io.on("connection", (socket) => {
             user1SessionId: sessionId,
             user2: findSameStudent.user,
             user2SessionId: findSameStudent.sessionId,
+            isGuest1: isGuest,
+            isGuest2: findSameStudent.isGuest,
             [quizType === "Yearly" ? "yearId" : "topicId"]: yearIdOrTopicId,
           },
         };
@@ -169,6 +176,8 @@ io.on("connection", (socket) => {
           newOnlineRoomId: onlineRoom?._id,
           user1Id: onlineRoom?.user1,
           user2Id: onlineRoom?.user2,
+          isGuest1: onlineRoom?.isGuest1,
+          isGuest2: onlineRoom?.isGuest2,
         };
       };
 
@@ -177,15 +186,19 @@ io.on("connection", (socket) => {
       clearTimeout(timeoutId);
 
       if (result) {
-        const { newOnlineRoomId, user1Id, user2Id } = result;
+        const { newOnlineRoomId, user1Id, user2Id, isGuest1, isGuest2 } =
+          result;
         const isUser1 = user1Id === userId;
         const opponentId = isUser1 ? user2Id : user1Id;
+        const isOpponentGuest = isUser1 ? isGuest2 : isGuest1;
 
-        const opponentUser = await UserModel.findOne(
-          { clerkId: opponentId },
-          "fullName imageUrl"
-        );
+        let opponentUser: any;
 
+        if (isOpponentGuest) {
+          opponentUser = await GuestModel.findOne({ _id: opponentId });
+        } else {
+          opponentUser = await UserModel.findOne({ _id: opponentId });
+        }
         // Verify room readiness
         let roomValid = false;
         for (let i = 0; i < 10; i++) {
@@ -409,6 +422,40 @@ io.on("connection", (socket) => {
       });
     }
   };
+  const handleAddFriend = async (data: any) => {
+    const { userId, friendId, friendSessionId } = data;
+    if (!userId || !friendId || !friendSessionId) {
+      socket.emit("friend-payload-error", { data: "Payload is wrong" });
+      return;
+    }
+    const session = await mongoose.startSession();
+    try {
+      session.startTransaction();
+      await UserModel.findByIdAndUpdate(
+        friendId,
+        { $push: { requestsRecieved: userId } },
+        { session }
+      );
+      const myData = await UserModel.findByIdAndUpdate(
+        userId,
+        { $push: { requestsSend: friendId } },
+        { session }
+      );
+      io.to(friendSessionId).emit("request-received", {
+        fullName: myData?.fullName,
+        emailAddress: myData?.emailAddress,
+        imageUrl: myData?.imageUrl,
+        id: myData?._id,
+        sessionId: myData?.sessionId,
+      });
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      console.log(error);
+    } finally {
+      await session.endSession();
+    }
+  };
 
   socket.on("create-online-room", createRoom);
   socket.on("online-submit", submitOnlineRoom);
@@ -416,6 +463,7 @@ io.on("connection", (socket) => {
   socket.on("online-resign-by-leave", leaveByResign);
   socket.on("get-online-history", getOnlineHistory);
   socket.on("opponent-quiz-index", handleOpponentIndex);
+  socket.on("add-friend", handleAddFriend);
 
   socket.on("disconnect", async () => {
     socket.off("create-online-room", createRoom);
@@ -424,6 +472,7 @@ io.on("connection", (socket) => {
     socket.off("online-resign-by-leave", leaveByResign);
     socket.off("get-online-history", getOnlineHistory);
     socket.off("opponent-quiz-index", handleOpponentIndex);
+    socket.off("add-friend", handleAddFriend);
   });
 });
 
@@ -443,6 +492,7 @@ app.use("/quiz", quizRoutes);
 app.use("/subject", subjectRoute);
 app.use("/user", userRoute);
 app.use("/history", historyRoute);
+app.use("/guest", guestRoute);
 
 app.get("/", (req, res) => {
   res.status(200).json({ message: "Hello World" });

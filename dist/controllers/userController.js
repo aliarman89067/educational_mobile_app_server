@@ -8,6 +8,7 @@ const User_1 = __importDefault(require("../models/User"));
 const History_1 = __importDefault(require("../models/History"));
 const OnlineHistory_1 = __importDefault(require("../models/OnlineHistory"));
 const OnlineRoom_1 = __importDefault(require("../models/OnlineRoom"));
+const Guest_1 = __importDefault(require("../models/Guest"));
 // export const createUserWebhook = async (req: Request, res: Response) => {
 //   try {
 //     const SIGNING_SECRET = process.env.SIGNING_SECRET;
@@ -67,8 +68,8 @@ const OnlineRoom_1 = __importDefault(require("../models/OnlineRoom"));
 // };
 const createUser = async (req, res) => {
     try {
-        const { fullName, emailAddress, imageUrl } = req.body;
-        if (!fullName || !emailAddress || !imageUrl) {
+        const { fullName, emailAddress, imageUrl, sessionId } = req.body;
+        if (!fullName || !emailAddress || !imageUrl || !sessionId) {
             res.status(404).json({ message: "Payload in not correct" });
             return;
         }
@@ -81,6 +82,7 @@ const createUser = async (req, res) => {
             fullName,
             emailAddress,
             imageUrl,
+            sessionId,
         });
         await user.save();
         res.status(201).json(user);
@@ -93,8 +95,8 @@ const createUser = async (req, res) => {
 exports.createUser = createUser;
 const migrateUser = async (req, res) => {
     try {
-        const { guestId, fullName, emailAddress, imageUrl } = req.body;
-        if (!guestId || !fullName || !emailAddress || !imageUrl) {
+        const { guestId, fullName, emailAddress, imageUrl, sessionId } = req.body;
+        if (!guestId || !fullName || !emailAddress || !imageUrl || !sessionId) {
             res.status(404).json({ message: "Payload in not correct" });
             return;
         }
@@ -105,6 +107,7 @@ const migrateUser = async (req, res) => {
                 fullName,
                 emailAddress,
                 imageUrl,
+                sessionId,
             });
         }
         const histories = await History_1.default.find({
@@ -127,13 +130,14 @@ const migrateUser = async (req, res) => {
 exports.migrateUser = migrateUser;
 const migrateUserOnline = async (req, res) => {
     try {
-        const { guestId, fullName, emailAddress, imageUrl, resultId, roomId } = req.body;
+        const { guestId, fullName, emailAddress, imageUrl, resultId, roomId, sessionId, } = req.body;
         if (!guestId ||
             !fullName ||
             !emailAddress ||
             !imageUrl ||
             !resultId ||
-            !roomId) {
+            !roomId ||
+            !sessionId) {
             res.status(404).json({ message: "Payload in not correct" });
             return;
         }
@@ -144,10 +148,10 @@ const migrateUserOnline = async (req, res) => {
                 fullName,
                 emailAddress,
                 imageUrl,
+                sessionId,
             });
         }
         const onlineHistories = await OnlineHistory_1.default.find({ user: guestId });
-        console.log(onlineHistories.length, "Online Histories Found");
         onlineHistories.forEach(async (history) => {
             await OnlineHistory_1.default.findByIdAndUpdate(history.id, {
                 user: user.id,
@@ -156,7 +160,6 @@ const migrateUserOnline = async (req, res) => {
         const onlineRooms = await OnlineRoom_1.default.find({
             $or: [{ user1: guestId }, { user2: guestId }],
         });
-        console.log(onlineRooms.length, "Online Rooms Found");
         onlineRooms.forEach(async (room) => {
             const isUser1 = room.user1 === guestId;
             if (isUser1) {
@@ -181,9 +184,12 @@ exports.migrateUserOnline = migrateUserOnline;
 const getUsers = async (req, res) => {
     var _a;
     const { name, userId } = req.params;
+    console.log(name, userId);
     try {
-        const existingUser = User_1.default.findById(userId);
-        if (!existingUser) {
+        const existingUser = await User_1.default.findById(userId);
+        const existingGuest = await Guest_1.default.findById(userId);
+        if (!existingUser && !existingGuest) {
+            console.log("User not found!");
             res.status(404).json({ message: "Unauthorizes user!" });
             return;
         }

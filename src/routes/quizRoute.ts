@@ -20,7 +20,10 @@ router.put("/reactive-solo-room", reactiveSoloRoom);
 router.put("/leave/solo-room/:roomId", leaveSoloRoom);
 router.post("/submit/solo-room", submitSoloRoom);
 router.get("/get-solo-result/:resultId", soloRoomResult);
-router.get("/get-online-room/:onlineRoomId/:userId/:sessionId", getOnlineRoom);
-router.get("/get-online-history/:resultId/:roomId", getOnlineResult);
+router.get(
+  "/get-online-room/:onlineRoomId/:userId/:isGuest/:sessionId",
+  getOnlineRoom
+);
+router.get("/get-online-history/:resultId/:roomId/:isGuest", getOnlineResult);
 
 export default router;

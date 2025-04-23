@@ -12,6 +12,7 @@ const History_1 = __importDefault(require("../models/History"));
 const OnlineRoom_1 = __importDefault(require("../models/OnlineRoom"));
 const User_1 = __importDefault(require("../models/User"));
 const OnlineHistory_1 = __importDefault(require("../models/OnlineHistory"));
+const Guest_1 = __importDefault(require("../models/Guest"));
 const getQuizByCategory = async (req, res) => {
     try {
         const { quizType } = req.params;
@@ -29,6 +30,7 @@ const getQuizByCategory = async (req, res) => {
                 .populate({ path: "years" })
                 .select("-topics");
         }
+        console.log(subjects);
         res.status(200).json({ success: true, data: data, subjects });
     }
     catch (error) {
@@ -39,6 +41,7 @@ exports.getQuizByCategory = getQuizByCategory;
 const createSoloQuiz = async (req, res) => {
     try {
         const { subjectId, yearIdOrTopicId, quizLimit, quizType, seconds } = req.body;
+        console.log(subjectId, yearIdOrTopicId, quizLimit, quizType, seconds);
         if (!subjectId || !yearIdOrTopicId || !quizLimit || !quizType || !seconds) {
             res.status(404).json({
                 success: false,
@@ -181,7 +184,7 @@ const leaveSoloRoom = async (req, res) => {
 exports.leaveSoloRoom = leaveSoloRoom;
 const submitSoloRoom = async (req, res) => {
     try {
-        const { roomId, type, mcqs, states, userId, time } = req.body;
+        const { roomId, type, mcqs, states, userId, time, isGuest } = req.body;
         if (!roomId || !type || !mcqs || !states || !time) {
             res
                 .status(404)
@@ -254,9 +257,10 @@ const soloRoomResult = async (req, res) => {
 exports.soloRoomResult = soloRoomResult;
 const getOnlineRoom = async (req, res) => {
     var _a;
-    const { onlineRoomId, userId, sessionId } = req.params;
+    const { onlineRoomId, userId, isGuest, sessionId } = req.params;
     try {
         if (!onlineRoomId || !userId) {
+            console.log("Payload is not correct");
             res.status(404).json({
                 success: false,
                 message: "Params payload is not correct",
@@ -268,6 +272,7 @@ const getOnlineRoom = async (req, res) => {
         }).select("isUser1Alive isUser2Alive user1 user2");
         if ((!(isOnlineRoomAlive === null || isOnlineRoomAlive === void 0 ? void 0 : isOnlineRoomAlive.isUser1Alive) && !(isOnlineRoomAlive === null || isOnlineRoomAlive === void 0 ? void 0 : isOnlineRoomAlive.isUser2Alive)) ||
             !isOnlineRoomAlive) {
+            console.log("This room is expired");
             res.status(200).json({
                 success: false,
                 error: "room-expired",
@@ -276,6 +281,7 @@ const getOnlineRoom = async (req, res) => {
             return;
         }
         if (isOnlineRoomAlive.user1 === userId && !isOnlineRoomAlive.isUser1Alive) {
+            console.log("Room Expired for user 1");
             res.status(200).json({
                 success: false,
                 error: "room-expired",
@@ -285,6 +291,7 @@ const getOnlineRoom = async (req, res) => {
         }
         else if (isOnlineRoomAlive.user2 === userId &&
             !isOnlineRoomAlive.isUser2Alive) {
+            console.log("Room Expired for user 2");
             res.status(200).json({
                 success: false,
                 error: "room-expired",
@@ -294,6 +301,7 @@ const getOnlineRoom = async (req, res) => {
         }
         if (isOnlineRoomAlive.user1 !== userId &&
             isOnlineRoomAlive.user2 !== userId) {
+            console.log("User id is not matching any of the online room user id's");
             res.status(200).json({
                 success: false,
                 error: "server-error",
@@ -311,6 +319,7 @@ const getOnlineRoom = async (req, res) => {
         // Finding opponent
         // Validating that both user exist in online room
         if (!(onlineRoomData === null || onlineRoomData === void 0 ? void 0 : onlineRoomData.user1) || !onlineRoomData.user2) {
+            console.log("One user is missing in online room means its not completely updated!");
             res.status(200).json({
                 success: false,
                 error: "server-error",
@@ -320,6 +329,10 @@ const getOnlineRoom = async (req, res) => {
         }
         let opponent;
         let remainingTime = "";
+        const isUser1 = onlineRoomData.user1 === userId;
+        const isOpponentGuest = isUser1
+            ? onlineRoomData.isGuest2
+            : onlineRoomData.isGuest1;
         if (onlineRoomData.user1 === userId) {
             const updatedOnlineRoom = await OnlineRoom_1.default.findOneAndUpdate({
                 _id: onlineRoomId,
@@ -328,9 +341,16 @@ const getOnlineRoom = async (req, res) => {
                 user1SessionId: sessionId,
             }, { new: true });
             remainingTime = updatedOnlineRoom === null || updatedOnlineRoom === void 0 ? void 0 : updatedOnlineRoom.user1RemainingTime;
-            opponent = await User_1.default.findOne({
-                clerkId: onlineRoomData.user2,
-            });
+            if (isOpponentGuest) {
+                opponent = await Guest_1.default.findOne({
+                    _id: onlineRoomData.user2,
+                });
+            }
+            else {
+                opponent = await User_1.default.findOne({
+                    _id: onlineRoomData.user2,
+                });
+            }
         }
         else if (onlineRoomData.user2 === userId) {
             const updatedOnlineRoom = await OnlineRoom_1.default.findOneAndUpdate({
@@ -340,11 +360,19 @@ const getOnlineRoom = async (req, res) => {
                 user2SessionId: sessionId,
             }, { new: true });
             remainingTime = updatedOnlineRoom === null || updatedOnlineRoom === void 0 ? void 0 : updatedOnlineRoom.user2RemainingTime;
-            opponent = await User_1.default.findOne({
-                clerkId: onlineRoomData.user1,
-            });
+            if (isOpponentGuest) {
+                opponent = await Guest_1.default.findOne({
+                    _id: onlineRoomData.user1,
+                });
+            }
+            else {
+                opponent = await User_1.default.findOne({
+                    _id: onlineRoomData.user1,
+                });
+            }
         }
         if (!opponent) {
+            console.log("Can't find your opponent");
             res.status(200).json({
                 success: false,
                 error: "opponent-left",
@@ -359,6 +387,7 @@ const getOnlineRoom = async (req, res) => {
     }
     catch (error) {
         console.log(error);
+        console.log("Failed to get online room");
         res
             .status(500)
             .json({ message: `Failed to get online room ${(_a = error.message) !== null && _a !== void 0 ? _a : error}` });
@@ -367,7 +396,7 @@ const getOnlineRoom = async (req, res) => {
 exports.getOnlineRoom = getOnlineRoom;
 const getOnlineResult = async (req, res) => {
     var _a;
-    const { resultId, roomId } = req.params;
+    const { resultId, roomId, isGuest } = req.params;
     try {
         if (!resultId || !roomId) {
             res.status(404).json({
@@ -431,14 +460,28 @@ const getOnlineResult = async (req, res) => {
         }
         let opponentUser;
         if (findOnlineRoom.user1 === (myHistory === null || myHistory === void 0 ? void 0 : myHistory.user)) {
-            opponentUser = await User_1.default.findOne({
-                clerkId: findOnlineRoom.user2,
-            }).select("fullName imageUrl clerkId");
+            if (isGuest === "true") {
+                opponentUser = await Guest_1.default.findOne({
+                    _id: findOnlineRoom.user2,
+                });
+            }
+            else {
+                opponentUser = await User_1.default.findOne({
+                    clerkId: findOnlineRoom.user2,
+                }).select("fullName imageUrl clerkId");
+            }
         }
         else {
-            opponentUser = await User_1.default.findOne({
-                clerkId: findOnlineRoom.user1,
-            }).select("fullName imageUrl clerkId");
+            if (isGuest === "true") {
+                opponentUser = await Guest_1.default.findOne({
+                    clerkId: findOnlineRoom.user1,
+                });
+            }
+            else {
+                opponentUser = await User_1.default.findOne({
+                    clerkId: findOnlineRoom.user1,
+                }).select("fullName imageUrl clerkId");
+            }
         }
         if (findOpponentHistory) {
             const resignation = (_a = findOnlineRoom.resignation) !== null && _a !== void 0 ? _a : "";

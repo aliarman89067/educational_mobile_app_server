@@ -18,6 +18,7 @@ const quizRoute_1 = __importDefault(require("./routes/quizRoute"));
 const subjectRoute_1 = __importDefault(require("./routes/subjectRoute"));
 const userRoute_1 = __importDefault(require("./routes/userRoute"));
 const historyRoute_1 = __importDefault(require("./routes/historyRoute"));
+const guestRoute_1 = __importDefault(require("./routes/guestRoute"));
 require("./models/Topic");
 require("./models/Year");
 require("./models/SoloRoom");
@@ -31,6 +32,7 @@ const Topic_1 = __importDefault(require("./models/Topic"));
 const OnlineRoom_1 = __importDefault(require("./models/OnlineRoom"));
 const User_1 = __importDefault(require("./models/User"));
 const OnlineHistory_1 = __importDefault(require("./models/OnlineHistory"));
+const Guest_1 = __importDefault(require("./models/Guest"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
@@ -43,7 +45,7 @@ const io = new socket_io_1.Server(server, {
 io.on("connection", (socket) => {
     console.log(socket.id);
     const createRoom = async (data) => {
-        const { subjectId, yearIdOrTopicId, quizLimit, quizType, userId, sessionId, name, imageUrl, seconds, } = data;
+        const { subjectId, yearIdOrTopicId, quizLimit, quizType, userId, sessionId, name, imageUrl, seconds, isGuest, } = data;
         if (!subjectId ||
             !yearIdOrTopicId ||
             !quizLimit ||
@@ -57,12 +59,14 @@ io.on("connection", (socket) => {
             return;
         }
         try {
+            console.log("Is Guest", isGuest);
             // Create handshake room
             const newHandShakeRoom = new OnlineHandShakeRoom_1.default({
                 subjectId,
                 sessionId,
                 quizLimit,
                 quizType,
+                isGuest,
                 isAlive: true,
                 user: userId,
                 [quizType === "Yearly" ? "yearId" : "topicId"]: yearIdOrTopicId,
@@ -98,7 +102,7 @@ io.on("connection", (socket) => {
             const handleOnlineRoom = async () => {
                 // Generate unique room key
                 const uniqueKey = [userId, findSameStudent.user].sort().join("_");
-                console.log(uniqueKey);
+                console.log("Unique Id for both users", uniqueKey);
                 const model = quizType === "Yearly" ? Year_1.default : Topic_1.default;
                 const { mcqs } = await model.findById(yearIdOrTopicId).select("mcqs");
                 // Generate random quiz IDs
@@ -123,6 +127,8 @@ io.on("connection", (socket) => {
                         user1SessionId: sessionId,
                         user2: findSameStudent.user,
                         user2SessionId: findSameStudent.sessionId,
+                        isGuest1: isGuest,
+                        isGuest2: findSameStudent.isGuest,
                         [quizType === "Yearly" ? "yearId" : "topicId"]: yearIdOrTopicId,
                     },
                 };
@@ -142,16 +148,25 @@ io.on("connection", (socket) => {
                     newOnlineRoomId: onlineRoom === null || onlineRoom === void 0 ? void 0 : onlineRoom._id,
                     user1Id: onlineRoom === null || onlineRoom === void 0 ? void 0 : onlineRoom.user1,
                     user2Id: onlineRoom === null || onlineRoom === void 0 ? void 0 : onlineRoom.user2,
+                    isGuest1: onlineRoom === null || onlineRoom === void 0 ? void 0 : onlineRoom.isGuest1,
+                    isGuest2: onlineRoom === null || onlineRoom === void 0 ? void 0 : onlineRoom.isGuest2,
                 };
             };
             // Execute search and handle results
             const result = await searchStudent();
             clearTimeout(timeoutId);
             if (result) {
-                const { newOnlineRoomId, user1Id, user2Id } = result;
+                const { newOnlineRoomId, user1Id, user2Id, isGuest1, isGuest2 } = result;
                 const isUser1 = user1Id === userId;
                 const opponentId = isUser1 ? user2Id : user1Id;
-                const opponentUser = await User_1.default.findOne({ clerkId: opponentId }, "fullName imageUrl");
+                const isOpponentGuest = isUser1 ? isGuest2 : isGuest1;
+                let opponentUser;
+                if (isOpponentGuest) {
+                    opponentUser = await Guest_1.default.findOne({ _id: opponentId });
+                }
+                else {
+                    opponentUser = await User_1.default.findOne({ _id: opponentId });
+                }
                 // Verify room readiness
                 let roomValid = false;
                 for (let i = 0; i < 10; i++) {
@@ -373,12 +388,41 @@ io.on("connection", (socket) => {
             });
         }
     };
+    const handleAddFriend = async (data) => {
+        const { userId, friendId, friendSessionId } = data;
+        if (!userId || !friendId || !friendSessionId) {
+            socket.emit("friend-payload-error", { data: "Payload is wrong" });
+            return;
+        }
+        const session = await mongoose_1.default.startSession();
+        try {
+            session.startTransaction();
+            await User_1.default.findByIdAndUpdate(friendId, { $push: { requestsRecieved: userId } }, { session });
+            const myData = await User_1.default.findByIdAndUpdate(userId, { $push: { requestsSend: friendId } }, { session });
+            io.to(friendSessionId).emit("request-received", {
+                fullName: myData === null || myData === void 0 ? void 0 : myData.fullName,
+                emailAddress: myData === null || myData === void 0 ? void 0 : myData.emailAddress,
+                imageUrl: myData === null || myData === void 0 ? void 0 : myData.imageUrl,
+                id: myData === null || myData === void 0 ? void 0 : myData._id,
+                sessionId: myData === null || myData === void 0 ? void 0 : myData.sessionId,
+            });
+            await session.commitTransaction();
+        }
+        catch (error) {
+            await session.abortTransaction();
+            console.log(error);
+        }
+        finally {
+            await session.endSession();
+        }
+    };
     socket.on("create-online-room", createRoom);
     socket.on("online-submit", submitOnlineRoom);
     socket.on("online-resign-submit", onlineResignSubmit);
     socket.on("online-resign-by-leave", leaveByResign);
     socket.on("get-online-history", getOnlineHistory);
     socket.on("opponent-quiz-index", handleOpponentIndex);
+    socket.on("add-friend", handleAddFriend);
     socket.on("disconnect", async () => {
         socket.off("create-online-room", createRoom);
         socket.off("online-submit", submitOnlineRoom);
@@ -386,6 +430,7 @@ io.on("connection", (socket) => {
         socket.off("online-resign-by-leave", leaveByResign);
         socket.off("get-online-history", getOnlineHistory);
         socket.off("opponent-quiz-index", handleOpponentIndex);
+        socket.off("add-friend", handleAddFriend);
     });
 });
 // Middleware
@@ -402,6 +447,7 @@ app.use("/quiz", quizRoute_1.default);
 app.use("/subject", subjectRoute_1.default);
 app.use("/user", userRoute_1.default);
 app.use("/history", historyRoute_1.default);
+app.use("/guest", guestRoute_1.default);
 app.get("/", (req, res) => {
     res.status(200).json({ message: "Hello World" });
 });

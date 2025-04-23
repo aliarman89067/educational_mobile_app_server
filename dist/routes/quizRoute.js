@@ -13,6 +13,6 @@ router.put("/reactive-solo-room", quizController_1.reactiveSoloRoom);
 router.put("/leave/solo-room/:roomId", quizController_1.leaveSoloRoom);
 router.post("/submit/solo-room", quizController_1.submitSoloRoom);
 router.get("/get-solo-result/:resultId", quizController_1.soloRoomResult);
-router.get("/get-online-room/:onlineRoomId/:userId/:sessionId", quizController_1.getOnlineRoom);
-router.get("/get-online-history/:resultId/:roomId", quizController_1.getOnlineResult);
+router.get("/get-online-room/:onlineRoomId/:userId/:isGuest/:sessionId", quizController_1.getOnlineRoom);
+router.get("/get-online-history/:resultId/:roomId/:isGuest", quizController_1.getOnlineResult);
 exports.default = router;
