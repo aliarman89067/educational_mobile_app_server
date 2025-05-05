@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUsers = exports.migrateUserOnline = exports.migrateUser = exports.createUser = void 0;
+exports.disabledFriendRoom = exports.getUserFriends = exports.handleUnfriend = exports.acceptRequest = exports.cancelRequest = exports.getUserReceivedRequest = exports.updateSession = exports.getUsers = exports.migrateUserOnline = exports.migrateUser = exports.createUser = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const History_1 = __importDefault(require("../models/History"));
 const OnlineHistory_1 = __importDefault(require("../models/OnlineHistory"));
 const OnlineRoom_1 = __importDefault(require("../models/OnlineRoom"));
 const Guest_1 = __importDefault(require("../models/Guest"));
+const FriendRoom_1 = __importDefault(require("../models/FriendRoom"));
 // export const createUserWebhook = async (req: Request, res: Response) => {
 //   try {
 //     const SIGNING_SECRET = process.env.SIGNING_SECRET;
@@ -210,3 +211,186 @@ const getUsers = async (req, res) => {
     }
 };
 exports.getUsers = getUsers;
+const updateSession = async (req, res) => {
+    var _a;
+    try {
+        const { sessionId, userId } = req.body;
+        if (!sessionId || !userId) {
+            res.status(404).json({ message: "Payload is not correct." });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(userId, {
+            sessionId,
+        }, { new: true });
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: `Failed to update user session storage ${(_a = error.message) !== null && _a !== void 0 ? _a : error}`,
+        });
+    }
+};
+exports.updateSession = updateSession;
+const getUserReceivedRequest = async (req, res) => {
+    const { userId } = req.body;
+    try {
+        console.log(userId);
+        const existingUser = await User_1.default.findById(userId).populate("requestsRecieved");
+        if (!existingUser) {
+            res.status(404).json({ message: "User not exist!" });
+            return;
+        }
+        const filteredRequest = existingUser.requestsRecieved.map((request) => {
+            const requestData = request;
+            return {
+                fullName: requestData.fullName,
+                emailAddress: requestData.emailAddress,
+                imageUrl: requestData.imageUrl,
+                id: requestData.id,
+                sessionId: requestData.sessionId,
+            };
+        });
+        res.status(200).json(filteredRequest);
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to get received requests!" });
+    }
+};
+exports.getUserReceivedRequest = getUserReceivedRequest;
+const cancelRequest = async (req, res) => {
+    const { friendId, userId } = req.body;
+    try {
+        if (!friendId || !userId) {
+            res.status(404).json({ message: "Payload is not correct!" });
+            return;
+        }
+        const exisitngFriend = await User_1.default.findById(friendId);
+        if (!exisitngFriend) {
+            res.status(404).json({ message: "Friend is not found!" });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(friendId, {
+            $pull: { requestsSend: userId },
+        });
+        const exisitngUser = await User_1.default.findById(userId);
+        if (!exisitngUser) {
+            res.status(404).json({ message: "User is not found!" });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(userId, {
+            $pull: { requestsRecieved: friendId },
+        });
+        res.send("Request Cancelled successfully.");
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to cancel request!" });
+    }
+};
+exports.cancelRequest = cancelRequest;
+const acceptRequest = async (req, res) => {
+    const { friendId, userId } = req.body;
+    try {
+        if (!friendId || !userId) {
+            res.status(404).json({ message: "Payload is not correct!" });
+            return;
+        }
+        const exisitngFriend = await User_1.default.findById(friendId);
+        if (!exisitngFriend) {
+            res.status(404).json({ message: "Friend is not found!" });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(friendId, {
+            $pull: { requestsSend: userId },
+            $push: { friends: userId },
+        });
+        const exisitngUser = await User_1.default.findById(userId);
+        if (!exisitngUser) {
+            res.status(404).json({ message: "User is not found!" });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(userId, {
+            $pull: { requestsRecieved: friendId },
+            $push: { friends: friendId },
+        });
+        res.send("Request Accepted successfully.");
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to cancel request!" });
+    }
+};
+exports.acceptRequest = acceptRequest;
+const handleUnfriend = async (req, res) => {
+    const { friendId, userId } = req.body;
+    try {
+        if (!friendId || !userId) {
+            res.status(404).json({ message: "Payload is not correct!" });
+            return;
+        }
+        const exisitngFriend = await User_1.default.findById(friendId);
+        if (!exisitngFriend) {
+            res.status(404).json({ message: "Friend is not found!" });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(friendId, {
+            $pull: { friends: userId },
+        });
+        const exisitngUser = await User_1.default.findById(userId);
+        if (!exisitngUser) {
+            res.status(404).json({ message: "User is not found!" });
+            return;
+        }
+        await User_1.default.findByIdAndUpdate(userId, {
+            $pull: { friends: friendId },
+        });
+        res.send("Unfriend successfull.");
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to unfriend!" });
+    }
+};
+exports.handleUnfriend = handleUnfriend;
+const getUserFriends = async (req, res) => {
+    const { userId } = req.params;
+    console.log("Target UserId", userId);
+    try {
+        const userWithFriends = await User_1.default.findById(userId).populate({
+            path: "friends",
+        });
+        if (!userWithFriends) {
+            console.log("Cannot find any user");
+            res.status(404).json({ message: "User is not exist!" });
+            return;
+        }
+        console.log("user data", userWithFriends);
+        res.status(200).json(userWithFriends.friends);
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to get friends" });
+    }
+};
+exports.getUserFriends = getUserFriends;
+const disabledFriendRoom = async (req, res) => {
+    const { roomId } = req.body;
+    try {
+        const existingRoom = await FriendRoom_1.default.findById(roomId);
+        if (!existingRoom) {
+            console.log("Friend room not found!");
+            res.status(404).json({ message: "Friend room not found!" });
+            return;
+        }
+        await FriendRoom_1.default.findByIdAndUpdate(roomId, {
+            status: "ended",
+        });
+        res.status(200).json({ message: "Friend Room disabled successfully." });
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to disabled friend room!" });
+    }
+};
+exports.disabledFriendRoom = disabledFriendRoom;

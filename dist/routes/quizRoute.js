@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const quizController_1 = require("../controllers/quizController");
+const userController_1 = require("../controllers/userController");
 const router = express_1.default.Router();
 router.get("/get-all/:quizType", quizController_1.getQuizByCategory);
 router.post("/solo-player", quizController_1.createSoloQuiz);
@@ -14,5 +15,9 @@ router.put("/leave/solo-room/:roomId", quizController_1.leaveSoloRoom);
 router.post("/submit/solo-room", quizController_1.submitSoloRoom);
 router.get("/get-solo-result/:resultId", quizController_1.soloRoomResult);
 router.get("/get-online-room/:onlineRoomId/:userId/:isGuest/:sessionId", quizController_1.getOnlineRoom);
+router.get("/get-friend-room/:friendRoomId/:userId/:sessionId", quizController_1.getFriendRoom);
 router.get("/get-online-history/:resultId/:roomId/:isGuest", quizController_1.getOnlineResult);
+router.post("/create-friendroom", quizController_1.createFriendRoom);
+router.put("/disabled-friend-room", userController_1.disabledFriendRoom);
+router.get("/get-friend-history/:resultId/:roomId", quizController_1.getFriendResult);
 exports.default = router;

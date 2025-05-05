@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getOnlineResult = exports.getOnlineRoom = exports.soloRoomResult = exports.submitSoloRoom = exports.leaveSoloRoom = exports.reactiveSoloRoom = exports.getSoloRoom = exports.createSoloQuiz = exports.getQuizByCategory = void 0;
+exports.getFriendResult = exports.getFriendRoom = exports.createFriendRoom = exports.getOnlineResult = exports.getOnlineRoom = exports.soloRoomResult = exports.submitSoloRoom = exports.leaveSoloRoom = exports.reactiveSoloRoom = exports.getSoloRoom = exports.createSoloQuiz = exports.getQuizByCategory = void 0;
 const Subject_1 = __importDefault(require("../models/Subject"));
 const Topic_1 = __importDefault(require("../models/Topic"));
 const Year_1 = __importDefault(require("../models/Year"));
@@ -13,6 +13,8 @@ const OnlineRoom_1 = __importDefault(require("../models/OnlineRoom"));
 const User_1 = __importDefault(require("../models/User"));
 const OnlineHistory_1 = __importDefault(require("../models/OnlineHistory"));
 const Guest_1 = __importDefault(require("../models/Guest"));
+const FriendRoom_1 = __importDefault(require("../models/FriendRoom"));
+const FriendHistory_1 = __importDefault(require("../models/FriendHistory"));
 const getQuizByCategory = async (req, res) => {
     try {
         const { quizType } = req.params;
@@ -517,3 +519,309 @@ const getOnlineResult = async (req, res) => {
     }
 };
 exports.getOnlineResult = getOnlineResult;
+const createFriendRoom = async (req, res) => {
+    const { subjectId, yearIdOrTopicId, quizLimit, quizType, isGuest, userId, name, imageUrl, sessionId, seconds, } = req.body;
+    try {
+        if (!subjectId ||
+            !yearIdOrTopicId ||
+            !quizLimit ||
+            !quizType ||
+            !userId ||
+            !name ||
+            !imageUrl ||
+            !sessionId ||
+            !seconds) {
+            console.log("Payload is not correct");
+            res.status(404).json({ message: "Payload is not correct" });
+            return;
+        }
+        let data;
+        if (quizType === "Yearly") {
+            data = await Year_1.default.findOne({ _id: yearIdOrTopicId }).select("mcqs");
+        }
+        else if (quizType === "Topical") {
+            data = await Topic_1.default.findOne({ _id: yearIdOrTopicId }).select("mcqs");
+        }
+        else {
+            res.status(404).json({
+                success: false,
+                message: "Quiz Type is not correct!",
+            });
+            return;
+        }
+        const targetQuiz = [];
+        while (targetQuiz.length < quizLimit) {
+            const randomQuizId = data.mcqs[Math.ceil(Math.random() * data.mcqs.length - 1)];
+            if (!targetQuiz.includes(randomQuizId)) {
+                targetQuiz.push(randomQuizId);
+            }
+        }
+        const newFriendRoom = new FriendRoom_1.default({
+            subjectId,
+            [quizType === "Topical" ? "topicId" : "yearId"]: yearIdOrTopicId,
+            quizType: quizType === "Topical" ? "Topical" : "Yearly",
+            quizes: targetQuiz,
+            user1: userId,
+            user1SessionId: sessionId,
+            isUser1Alive: true,
+            seconds,
+            status: "pending",
+            isGuest1: isGuest,
+        });
+        await newFriendRoom.save();
+        res.status(201).json({ roomId: newFriendRoom.id });
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Failed to create friend room" });
+    }
+};
+exports.createFriendRoom = createFriendRoom;
+const getFriendRoom = async (req, res) => {
+    var _a;
+    const { friendRoomId, userId, sessionId } = req.params;
+    try {
+        if (!friendRoomId || !userId || !sessionId) {
+            console.log("Payload is not correct");
+            res.status(404).json({
+                success: false,
+                message: "Params payload is not correct",
+            });
+            return;
+        }
+        const isOnlineRoomAlive = await FriendRoom_1.default.findOne({
+            _id: friendRoomId,
+        }).select("isUser1Alive isUser2Alive user1 user2");
+        if ((!(isOnlineRoomAlive === null || isOnlineRoomAlive === void 0 ? void 0 : isOnlineRoomAlive.isUser1Alive) && !(isOnlineRoomAlive === null || isOnlineRoomAlive === void 0 ? void 0 : isOnlineRoomAlive.isUser2Alive)) ||
+            !isOnlineRoomAlive) {
+            console.log("This room is expired");
+            res.status(200).json({
+                success: false,
+                error: "room-expired",
+                message: "This Online Room is not valid. Its expired!",
+            });
+            return;
+        }
+        if (isOnlineRoomAlive.user1 === userId && !isOnlineRoomAlive.isUser1Alive) {
+            console.log("Room Expired for user 1");
+            res.status(200).json({
+                success: false,
+                error: "room-expired",
+                message: "This room is expired for user 1",
+            });
+            return;
+        }
+        else if (isOnlineRoomAlive.user2 === userId &&
+            !isOnlineRoomAlive.isUser2Alive) {
+            console.log("Room Expired for user 2");
+            res.status(200).json({
+                success: false,
+                error: "room-expired",
+                message: "This room is expired for user 2",
+            });
+            return;
+        }
+        if (isOnlineRoomAlive.user1 !== userId &&
+            isOnlineRoomAlive.user2 !== userId) {
+            console.log("User id is not matching any of the online room user id's");
+            res.status(200).json({
+                success: false,
+                error: "server-error",
+                message: "User id is not matching any of the online room user id's",
+            });
+            return;
+        }
+        const friendRoomData = await FriendRoom_1.default.findOne({
+            _id: friendRoomId,
+        })
+            .populate({ path: "subjectId", select: "_id subject" })
+            .populate({ path: "yearId", select: "_id year" })
+            .populate({ path: "topicId", select: "_id topic" })
+            .populate({ path: "quizes" });
+        // Finding opponent
+        // Validating that both user exist in online room
+        if (!(friendRoomData === null || friendRoomData === void 0 ? void 0 : friendRoomData.user1) || !friendRoomData.user2) {
+            console.log("One user is missing in online room means its not completely updated!");
+            res.status(200).json({
+                success: false,
+                error: "server-error",
+                message: "One user is missing in online room means its not completely updated!",
+            });
+            return;
+        }
+        let opponent;
+        let remainingTime = "";
+        const isUser1 = friendRoomData.user1 === userId;
+        const isOpponentGuest = isUser1
+            ? friendRoomData.isGuest2
+            : friendRoomData.isGuest1;
+        if (friendRoomData.user1 === userId) {
+            const updatedOnlineRoom = await FriendRoom_1.default.findOneAndUpdate({
+                _id: friendRoomId,
+                status: "playing",
+            }, {
+                user1SessionId: sessionId,
+            }, { new: true });
+            remainingTime = updatedOnlineRoom === null || updatedOnlineRoom === void 0 ? void 0 : updatedOnlineRoom.user1RemainingTime;
+            if (isOpponentGuest) {
+                opponent = await Guest_1.default.findOne({
+                    _id: friendRoomData.user2,
+                });
+            }
+            else {
+                opponent = await User_1.default.findOne({
+                    _id: friendRoomData.user2,
+                });
+            }
+        }
+        else if (friendRoomData.user2 === userId) {
+            const updatedOnlineRoom = await FriendRoom_1.default.findOneAndUpdate({
+                _id: friendRoomId,
+                status: "playing",
+            }, {
+                user2SessionId: sessionId,
+            }, { new: true });
+            remainingTime = updatedOnlineRoom === null || updatedOnlineRoom === void 0 ? void 0 : updatedOnlineRoom.user2RemainingTime;
+            if (isOpponentGuest) {
+                opponent = await Guest_1.default.findOne({
+                    _id: friendRoomData.user1,
+                });
+            }
+            else {
+                opponent = await User_1.default.findOne({
+                    _id: friendRoomData.user1,
+                });
+            }
+        }
+        if (!opponent) {
+            console.log("Can't find your opponent");
+            res.status(200).json({
+                success: false,
+                error: "opponent-left",
+                message: "Can't find your opponent",
+            });
+            return;
+        }
+        res.status(200).json({
+            success: true,
+            data: { friendRoomData, opponent, remainingTime },
+        });
+    }
+    catch (error) {
+        console.log(error);
+        console.log("Failed to get online room");
+        res
+            .status(500)
+            .json({ message: `Failed to get online room ${(_a = error.message) !== null && _a !== void 0 ? _a : error}` });
+    }
+};
+exports.getFriendRoom = getFriendRoom;
+const getFriendResult = async (req, res) => {
+    var _a;
+    const { resultId, roomId } = req.params;
+    try {
+        if (!resultId || !roomId) {
+            res.status(404).json({
+                success: false,
+                message: "Result Id or Room Id is not exist!",
+            });
+            return;
+        }
+        const findOpponentHistory = await FriendHistory_1.default.findOne({
+            roomId,
+            _id: { $ne: resultId },
+        })
+            .populate({ path: "mcqs" })
+            .populate({
+            path: "roomId",
+            select: "_id subjectId yearId topicId quizType",
+            populate: {
+                path: "subjectId yearId topicId",
+                select: "subject year topic",
+            },
+        });
+        const myHistory = await FriendHistory_1.default.findOne({
+            roomId,
+            _id: resultId,
+        })
+            .populate({ path: "mcqs" })
+            .populate({
+            path: "roomId",
+            select: "_id subjectId yearId topicId quizType",
+            populate: {
+                path: "subjectId yearId topicId",
+                select: "subject year topic",
+            },
+        });
+        const findFriendRoom = await FriendRoom_1.default.findOneAndUpdate({
+            _id: roomId,
+        }, {
+            status: "ended",
+        }, {
+            new: true,
+        });
+        if ((findFriendRoom === null || findFriendRoom === void 0 ? void 0 : findFriendRoom.user1) === (myHistory === null || myHistory === void 0 ? void 0 : myHistory.user)) {
+            await FriendRoom_1.default.findOneAndUpdate({
+                _id: roomId,
+            }, {
+                quizIdAndValue1: myHistory === null || myHistory === void 0 ? void 0 : myHistory.quizIdAndValue,
+                quizIdAndValue2: findOpponentHistory === null || findOpponentHistory === void 0 ? void 0 : findOpponentHistory.quizIdAndValue,
+            });
+        }
+        else {
+            await FriendRoom_1.default.findOneAndUpdate({
+                _id: roomId,
+            }, {
+                quizIdAndValue2: myHistory === null || myHistory === void 0 ? void 0 : myHistory.quizIdAndValue,
+                quizIdAndValue1: findOpponentHistory === null || findOpponentHistory === void 0 ? void 0 : findOpponentHistory.quizIdAndValue,
+            });
+        }
+        if (!findFriendRoom) {
+            res.status(400).json({ success: false, message: "Room is expired!" });
+            return;
+        }
+        let opponentUser;
+        if (findFriendRoom.user1 === (myHistory === null || myHistory === void 0 ? void 0 : myHistory.user)) {
+            opponentUser = await User_1.default.findOne({
+                clerkId: findFriendRoom.user2,
+            }).select("fullName imageUrl clerkId");
+        }
+        else {
+            opponentUser = await User_1.default.findOne({
+                clerkId: findFriendRoom.user1,
+            }).select("fullName imageUrl clerkId");
+        }
+        if (findOpponentHistory) {
+            const resignation = (_a = findFriendRoom.resignation) !== null && _a !== void 0 ? _a : "";
+            res.status(200).json({
+                success: true,
+                isPending: false,
+                data: {
+                    myHistory,
+                    opponentUser,
+                    opponentHistory: findOpponentHistory,
+                    resignation,
+                },
+            });
+        }
+        else {
+            res.status(200).json({
+                success: true,
+                isPending: true,
+                data: {
+                    myData: myHistory,
+                    opponentUser,
+                    time: {
+                        fullTime: findFriendRoom.seconds,
+                        timeTaken: myHistory === null || myHistory === void 0 ? void 0 : myHistory.time,
+                    },
+                },
+            });
+        }
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, message: "Something went wrong" });
+    }
+};
+exports.getFriendResult = getFriendResult;
