@@ -10,6 +10,8 @@ import {
   acceptRequest,
   handleUnfriend,
   getUserFriends,
+  createUserPaperFields,
+  checkPaperJourney,
 } from "../controllers/userController";
 
 const router = express.Router();
@@ -29,5 +31,7 @@ router.put("/cancel-request", cancelRequest);
 router.put("/accept-request", acceptRequest);
 router.put("/unfriend", handleUnfriend);
 router.post("/get-friends/:userId", getUserFriends);
+router.post("/user-paper-fields", createUserPaperFields);
+router.post("/check-paper-journey/:userId", checkPaperJourney);
 
 export default router;

@@ -6,6 +6,7 @@ import OnlineHistoryModel from "../models/OnlineHistory";
 import OnlineRoomModel from "../models/OnlineRoom";
 import GuestModel from "../models/Guest";
 import FriendRoomModel from "../models/FriendRoom";
+import UserPaperFieldsModel from "../models/UserPaperFields";
 
 // export const createUserWebhook = async (req: Request, res: Response) => {
 //   try {
@@ -400,5 +401,44 @@ export const disabledFriendRoom = async (req: Request, res: Response) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Failed to disabled friend room!" });
+  }
+};
+
+export const createUserPaperFields = async (req: Request, res: Response) => {
+  const { userId, board, grade, subjects } = req.body;
+  try {
+    if (!userId || !board || !grade || !subjects || subjects.length < 1) {
+      res.status(404).json({ message: "Request payload is not correct!" });
+      return;
+    }
+    const newPaperFields = await UserPaperFieldsModel.create({
+      user: userId,
+      board,
+      grade,
+      subjects,
+    });
+    res.status(201).json(newPaperFields);
+  } catch (error: any) {
+    console.log(error);
+    res.status(500).json({
+      message: `Failed to create user paper fields ${error.message ?? error}`,
+    });
+  }
+};
+
+export const checkPaperJourney = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const getPaperFields = await UserPaperFieldsModel.findOne({
+      user: userId,
+    });
+    const success = getPaperFields ? "true" : "false";
+
+    res.status(200).json({ success });
+  } catch (error: any) {
+    console.log(error);
+    res.status(500).json({
+      message: `Failed to get user paper journey ${error.message ?? error}`,
+    });
   }
 };

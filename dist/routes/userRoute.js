@@ -21,4 +21,6 @@ router.put("/cancel-request", userController_1.cancelRequest);
 router.put("/accept-request", userController_1.acceptRequest);
 router.put("/unfriend", userController_1.handleUnfriend);
 router.post("/get-friends/:userId", userController_1.getUserFriends);
+router.post("/user-paper-fields", userController_1.createUserPaperFields);
+router.post("/check-paper-journey/:userId", userController_1.checkPaperJourney);
 exports.default = router;

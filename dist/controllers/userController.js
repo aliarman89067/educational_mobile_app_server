@@ -3,13 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.disabledFriendRoom = exports.getUserFriends = exports.handleUnfriend = exports.acceptRequest = exports.cancelRequest = exports.getUserReceivedRequest = exports.updateSession = exports.getUsers = exports.migrateUserOnline = exports.migrateUser = exports.createUser = void 0;
+exports.checkPaperJourney = exports.createUserPaperFields = exports.disabledFriendRoom = exports.getUserFriends = exports.handleUnfriend = exports.acceptRequest = exports.cancelRequest = exports.getUserReceivedRequest = exports.updateSession = exports.getUsers = exports.migrateUserOnline = exports.migrateUser = exports.createUser = void 0;
 const User_1 = __importDefault(require("../models/User"));
 const History_1 = __importDefault(require("../models/History"));
 const OnlineHistory_1 = __importDefault(require("../models/OnlineHistory"));
 const OnlineRoom_1 = __importDefault(require("../models/OnlineRoom"));
 const Guest_1 = __importDefault(require("../models/Guest"));
 const FriendRoom_1 = __importDefault(require("../models/FriendRoom"));
+const UserPaperFields_1 = __importDefault(require("../models/UserPaperFields"));
 // export const createUserWebhook = async (req: Request, res: Response) => {
 //   try {
 //     const SIGNING_SECRET = process.env.SIGNING_SECRET;
@@ -394,3 +395,45 @@ const disabledFriendRoom = async (req, res) => {
     }
 };
 exports.disabledFriendRoom = disabledFriendRoom;
+const createUserPaperFields = async (req, res) => {
+    var _a;
+    const { userId, board, grade, subjects } = req.body;
+    try {
+        if (!userId || !board || !grade || !subjects || subjects.length < 1) {
+            res.status(404).json({ message: "Request payload is not correct!" });
+            return;
+        }
+        const newPaperFields = await UserPaperFields_1.default.create({
+            user: userId,
+            board,
+            grade,
+            subjects,
+        });
+        res.status(201).json(newPaperFields);
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: `Failed to create user paper fields ${(_a = error.message) !== null && _a !== void 0 ? _a : error}`,
+        });
+    }
+};
+exports.createUserPaperFields = createUserPaperFields;
+const checkPaperJourney = async (req, res) => {
+    var _a;
+    try {
+        const { userId } = req.params;
+        const getPaperFields = await UserPaperFields_1.default.findOne({
+            user: userId,
+        });
+        const success = getPaperFields ? "true" : "false";
+        res.status(200).json({ success });
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: `Failed to get user paper journey ${(_a = error.message) !== null && _a !== void 0 ? _a : error}`,
+        });
+    }
+};
+exports.checkPaperJourney = checkPaperJourney;
